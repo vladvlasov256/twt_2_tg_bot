@@ -30,7 +30,7 @@ async fn handle_rejection(error: warp::Rejection) -> Result<impl warp::Reply, In
     Ok(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-pub async fn webhook(bot: AutoSend<Bot>) -> impl update_listeners::UpdateListener<Infallible> {
+pub async fn webhook(bot: AutoSend<DefaultParseMode<Bot>>) -> impl update_listeners::UpdateListener<Infallible> {
     // Heroku auto defines a port value
     let teloxide_token = env::var("TELOXIDE_TOKEN").expect("TELOXIDE_TOKEN env variable missing");
     let port: u16 = env::var("PORT")
@@ -75,22 +75,31 @@ pub async fn webhook(bot: AutoSend<Bot>) -> impl update_listeners::UpdateListene
     StatefulListener::new((stream, stop_token), streamf, |state: &mut (_, AsyncStopToken)| state.1.clone())
 }
 
-async fn run() {
+async fn run() -> Result<(), BotErrorKind> {
     teloxide::enable_logging!();
     log::info!("Starting heroku_ping_pong_bot...");
 
-    let bot = Bot::from_env().auto_send();
+    match set_twitter_api_token_value().await {
+        Ok(_) => {},
+        Err(error) => log::error!("Error during twitter token processing: {}", BotError::from(error))
+    }
 
+    let bot = Bot::from_env().parse_mode(ParseMode::MarkdownV2).auto_send();
     let cloned_bot = bot.clone();
     teloxide::repl_with_listener(
         bot,
         |message| async move {
-            message.answer("pong").await?;
+            match process_message(message).await {
+                Ok(_) => {},
+                Err(error) => log::error!("Error during message processing: {}", BotError::from(error))
+            }
             respond(())
         },
         webhook(cloned_bot).await,
     )
     .await;
+
+    Ok(())
 }
 
 // !!! println -> logs
@@ -133,75 +142,75 @@ async fn run() {
 //     Ok(())
 // }
 
-// async fn process_message(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Result<(), BotErrorKind> {
-//     match message_processor(cx) {
-//         Some(processor) => {
-//             unsafe {
-//                 let token = Token::Bearer(String::from(TOKEN_VALUE.clone().unwrap_or_default()));    
-//                 match processor.process(token).await {
-//                     Ok(_) => {},
-//                     Err(error) => println!("Error during processing: {}", BotError::from(error))
-//                 }
-//             }
-//         },
-//         _ => {}
-//     }
-//     Ok(())
-// }
+async fn process_message(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Result<(), BotErrorKind> {
+    match message_processor(cx) {
+        Some(processor) => {
+            unsafe {
+                let token = Token::Bearer(String::from(TOKEN_VALUE.clone().unwrap_or_default()));    
+                match processor.process(token).await {
+                    Ok(_) => {},
+                    Err(error) => println!("Error during processing: {}", BotError::from(error))
+                }
+            }
+        },
+        _ => {}
+    }
+    Ok(())
+}
 
-// fn message_processor(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Option<Box<dyn UpdateProcessor>> {
-//     match message_text(&cx) {
-//         Some(text) => {
-//             return Some(Box::new(TextMessageProcessor { 
-//                 message: cx,
-//                 text: text
-//             }));
-//         },
-//         _ => None
-//     }
-// }
+fn message_processor(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Option<Box<dyn UpdateProcessor>> {
+    match message_text(&cx) {
+        Some(text) => {
+            return Some(Box::new(TextMessageProcessor { 
+                message: cx,
+                text: text
+            }));
+        },
+        _ => None
+    }
+}
 
-// fn message_text(cx: &UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Option<String> {
-//     match cx.update.kind {
-//         MessageKind::Common(ref message) => {
-//             match &message.media_kind {
-//                 MediaKind::Text(text) => Some(text.text.clone()),
-//                 _ => None
-//             }
-//         },
-//         _ => None
-//     }
-// }
+fn message_text(cx: &UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Option<String> {
+    match cx.update.kind {
+        MessageKind::Common(ref message) => {
+            match &message.media_kind {
+                MediaKind::Text(text) => Some(text.text.clone()),
+                _ => None
+            }
+        },
+        _ => None
+    }
+}
 
-// async fn process_inline_query(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, InlineQuery>) -> Result<(), BotErrorKind> {
-//     let processor = InlineQueryProcessor { query: cx };
-//     unsafe {
-//         let token = Token::Bearer(String::from(TOKEN_VALUE.clone().unwrap_or_default()));    
-//         match processor.process(token).await {
-//             Ok(_) => {},
-//             Err(error) => println!("Error during processing: {}", BotError::from(error))
-//         }
-//     }
-//     Ok(())
-// }
+async fn process_inline_query(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, InlineQuery>) -> Result<(), BotErrorKind> {
+    let processor = InlineQueryProcessor { query: cx };
+    unsafe {
+        let token = Token::Bearer(String::from(TOKEN_VALUE.clone().unwrap_or_default()));    
+        match processor.process(token).await {
+            Ok(_) => {},
+            Err(error) => println!("Error during processing: {}", BotError::from(error))
+        }
+    }
+    Ok(())
+}
 
-// async fn set_twitter_api_token_value() -> Result<(), BotErrorKind> {
-//     let twitter_client_id = env::var("TWITTER_CLIENT_ID").expect("TWITTER_CLIENT_ID not set");
-//     let twitter_secret = env::var("TWITTER_SECRET").expect("TWITTER_SECRET not set");
-//     let con_token = KeyPair::new(twitter_client_id, twitter_secret);
-//     let twitter_token = auth::bearer_token(&con_token).await?;
+async fn set_twitter_api_token_value() -> Result<(), BotErrorKind> {
+    let twitter_client_id = env::var("TWITTER_CLIENT_ID").expect("TWITTER_CLIENT_ID not set");
+    let twitter_secret = env::var("TWITTER_SECRET").expect("TWITTER_SECRET not set");
+    let con_token = KeyPair::new(twitter_client_id, twitter_secret);
+    let twitter_token = auth::bearer_token(&con_token).await?;
 
-//     unsafe {
-//         TOKEN_VALUE = twitter_token_value(twitter_token);
-//     }
+    unsafe {
+        TOKEN_VALUE = twitter_token_value(twitter_token);
+    }
 
-//     Ok(())
-// }
+    Ok(())
+}
 
-// fn twitter_token_value(token: Token) -> Option<String> {
-//     if let Token::Bearer(token_str) = token {
-//         Some(token_str)
-//     } else {
-//         None
-//     }
-// }
+fn twitter_token_value(token: Token) -> Option<String> {
+    if let Token::Bearer(token_str) = token {
+        Some(token_str)
+    } else {
+        None
+    }
+}
