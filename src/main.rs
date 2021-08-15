@@ -22,7 +22,10 @@ static mut TOKEN_VALUE: Option<String> = None;
 
 #[tokio::main]
 async fn main() {
-    run().await;
+    match run().await {
+        Ok(_) => {},
+        Err(error) => log::error!("Error on start: {}", BotError::from(error))
+    }
 }
 
 async fn handle_rejection(error: warp::Rejection) -> Result<impl warp::Reply, Infallible> {
@@ -75,67 +78,7 @@ pub async fn webhook(bot: AutoSend<DefaultParseMode<Bot>>) -> impl update_listen
     StatefulListener::new((stream, stop_token), streamf, |state: &mut (_, AsyncStopToken)| state.1.clone())
 }
 
-async fn run() -> Result<(), BotErrorKind> {
-    teloxide::enable_logging!();
-    log::info!("Starting heroku_ping_pong_bot...");
-
-    match set_twitter_api_token_value().await {
-        Ok(_) => {},
-        Err(error) => log::error!("Error during twitter token processing: {}", BotError::from(error))
-    }
-
-    let bot = Bot::from_env().parse_mode(ParseMode::MarkdownV2).auto_send();
-    let cloned_bot = bot.clone();
-    // teloxide::repl_with_listener(
-    //     bot,
-    //     |message| async move {
-    //         match process_message(message).await {
-    //             Ok(_) => {},
-    //             Err(error) => log::error!("Error during message processing: {}", BotError::from(error))
-    //         }
-    //         respond(())
-    //     },
-    //     webhook(cloned_bot).await,
-    // )
-    // .await;
-    let handler = Arc::new(
-        |message| async move {
-            match process_message(message).await {
-                Ok(_) => {},
-                Err(error) => log::error!("Error during message processing: {}", BotError::from(error))
-            }
-            respond(())
-        },
-    );
-    Dispatcher::new(bot)
-        .messages_handler(|rx| {
-            UnboundedReceiverStream::new(rx).for_each_concurrent(None, move |message| {
-                let handler = Arc::clone(&handler);
-
-                async move {
-                    handler(message).await.log_on_error().await;
-                }
-            })
-        })
-        .setup_ctrlc_handler()
-        .dispatch_with_listener(
-            webhook(cloned_bot).await,
-            LoggingErrorHandler::with_custom_text("An error from the update listener"),
-        )
-        .await;
-
-    Ok(())
-}
-
 // !!! println -> logs
-
-// #[tokio::main]
-// async fn main() {
-//     match run().await {
-//         Ok(_) => {},
-//         Err(error) => log::error!("Error on start: {}", BotError::from(error))
-//     }
-// }
 
 // async fn run() -> Result<(), BotErrorKind> {
 //     teloxide::enable_logging!();
@@ -166,6 +109,80 @@ async fn run() -> Result<(), BotErrorKind> {
         
 //     Ok(())
 // }
+
+async fn run() -> Result<(), BotErrorKind> {
+    teloxide::enable_logging!();
+    log::info!("Starting heroku_ping_pong_bot...");
+
+    match set_twitter_api_token_value().await {
+        Ok(_) => {},
+        Err(error) => log::error!("Error during twitter token processing: {}", BotError::from(error))
+    }
+
+    let bot = Bot::from_env().parse_mode(ParseMode::MarkdownV2).auto_send();
+    let cloned_bot = bot.clone();
+    // teloxide::repl_with_listener(
+    //     bot,
+    //     |message| async move {
+    //         match process_message(message).await {
+    //             Ok(_) => {},
+    //             Err(error) => log::error!("Error during message processing: {}", BotError::from(error))
+    //         }
+    //         respond(())
+    //     },
+    //     webhook(cloned_bot).await,
+    // )
+    // .await;
+    let message_handler = Arc::new(
+        |message| async move {
+            match process_message(message).await {
+                Ok(_) => {},
+                Err(error) => log::error!("Error during message processing: {}", BotError::from(error))
+            }
+            respond(())
+        },
+    );
+    
+    let inline_query_handler = Arc::new(
+        |query| async move {
+            match process_inline_query(query).await {
+                Ok(_) => {},
+                Err(error) => log::error!("Error during processing: {}", BotError::from(error))
+            }
+            respond(())
+        },
+    );
+
+    Dispatcher::new(bot)
+        .messages_handler(|rx| {
+            UnboundedReceiverStream::new(rx)
+                .for_each_concurrent(None, move |message| {
+                    let handler = Arc::clone(&message_handler);
+                    async move {
+                        handler(message).await.log_on_error().await;
+                    }
+                })
+        })
+        .inline_queries_handler(|rx| {
+            UnboundedReceiverStream::new(rx)
+                .for_each_concurrent(None, move |query| {
+                    let handler = Arc::clone(&inline_query_handler);
+                    async move {
+                        handler(query).await.log_on_error().await;
+                    }
+                })
+        })
+        .setup_ctrlc_handler()
+        .dispatch_with_listener(
+            webhook(cloned_bot).await,
+            LoggingErrorHandler::with_custom_text("An error from the update listener"),
+        )
+        .await;
+
+    Ok(())
+}
+
+// !!! prelude method
 
 async fn process_message(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> Result<(), BotErrorKind> {
     match message_processor(cx) {
