@@ -1,7 +1,7 @@
 use std::env;
 use std::string::String;
 use std::boxed::Box;
-use std::{convert::Infallible, net::SocketAddr};
+use std::{convert::Infallible, net::SocketAddr, fmt::Debug, future::Future, sync::Arc};
 // use std::{convert::Infallible, env, net::SocketAddr};
 
 use teloxide::{dispatching::{update_listeners::{self, StatefulListener}, stop_token::AsyncStopToken}, prelude::*, types::Update};
@@ -86,8 +86,19 @@ async fn run() -> Result<(), BotErrorKind> {
 
     let bot = Bot::from_env().parse_mode(ParseMode::MarkdownV2).auto_send();
     let cloned_bot = bot.clone();
-    teloxide::repl_with_listener(
-        bot,
+    // teloxide::repl_with_listener(
+    //     bot,
+    //     |message| async move {
+    //         match process_message(message).await {
+    //             Ok(_) => {},
+    //             Err(error) => log::error!("Error during message processing: {}", BotError::from(error))
+    //         }
+    //         respond(())
+    //     },
+    //     webhook(cloned_bot).await,
+    // )
+    // .await;
+    let handler = Arc::new(
         |message| async move {
             match process_message(message).await {
                 Ok(_) => {},
@@ -95,9 +106,23 @@ async fn run() -> Result<(), BotErrorKind> {
             }
             respond(())
         },
-        webhook(cloned_bot).await,
-    )
-    .await;
+    );
+    Dispatcher::new(bot)
+        .messages_handler(|rx| {
+            UnboundedReceiverStream::new(rx).for_each_concurrent(None, move |message| {
+                let handler = Arc::clone(&handler);
+
+                async move {
+                    handler(message).await.log_on_error().await;
+                }
+            })
+        })
+        .setup_ctrlc_handler()
+        .dispatch_with_listener(
+            webhook(cloned_bot).await,
+            LoggingErrorHandler::with_custom_text("An error from the update listener"),
+        )
+        .await;
 
     Ok(())
 }
