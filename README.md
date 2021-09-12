@@ -5,25 +5,19 @@ Telegram bot that zhuzh Twitter content
 
 Some tweets may contain line breaks or even dialogs.
 
-![Twitter iOS app screenshot with multiline twits](screenshots/original_text.jpg)
+![Tweet with several lines of text](screenshots/original_text.jpg)
 
-Such tweets are barely readable in Telegram.
+Such tweets are barely readable in Telegram. The bot keeps original formatting.
 
-![Twitter iOS app screenshot with multiline twits](screenshots/chat_text.jpg)
-
-The bot keeps original formatting.
-
-![Twitter iOS app screenshot with multiline twits](screenshots/text.gif)
+![Tweet with several lines of text link posted in Telegram](screenshots/chat_text.jpg)
+![Tweet with several lines of text link converted with the bot](screenshots/text.gif)
 
 ## Video converter
 
-Telegram doesn't provide the ability to play Twitter videos inside the app.
+Telegram doesn't provide the ability to play Twitter videos inside the app. The bot converts them to regular MP4 files.
 
-![Twitter iOS app screenshot with multiline twits](screenshots/chat_video.jpg)
-
-The bot converts them to regular MP4 files.
-
-![Twitter iOS app screenshot with multiline twits](screenshots/video.gif)
+![Tweet with video link posted in Telegram](screenshots/chat_video.jpg)
+![Tweet with video link converted with bot](screenshots/video.gif)
 
 ## Dependencies
 
