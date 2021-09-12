@@ -11,7 +11,7 @@ use teloxide::utils::markdown::{bold, escape};
 pub trait UpdateProcessor: Sync + Send {
     fn text_with_link(&self) -> &String;
 
-    async fn process(&self, token: Token) -> Result<(), BotErrorKind> {
+    async fn process(&self, token: &Token) -> Result<(), BotErrorKind> {
         let id = tweet_id(self.text_with_link())?;
         let tweet = tweet::show(id, &token).await?;
         let reply = tweet_to_reply(&tweet.response).await?;
