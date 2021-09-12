@@ -1,5 +1,5 @@
 # @twt_2_tg_bot
-Telegram bot that zhuzh Twitter content
+Telegram bot that zhuzh shared Twitter content
 
 ## Text converter
 
