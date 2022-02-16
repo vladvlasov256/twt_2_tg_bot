@@ -20,11 +20,11 @@ struct PageView {
     r#type: String,
 }
 
-fn page_view(umami_id: String) -> PageView {
+fn page_view(umami_id: String, page: String) -> PageView {
     PageView {
         payload: PageViewPayload {
             website: umami_id,
-            url: String::from("/"),
+            url: page,
             referrer: String::from(""),
             hostname: String::from("twt_2_tg_bot"),
             language: String::from("en-US"),
@@ -34,10 +34,10 @@ fn page_view(umami_id: String) -> PageView {
     }
 }
 
-pub async fn track_hit() -> Result<(), BotErrorKind> {
+pub async fn track_hit(page: String) -> Result<(), BotErrorKind> {
     let umami_url = env::var("UMAMI_URL").expect("UMAMI_URL not set");
     let umami_id = env::var("UMAMI_ID").expect("UMAMI_ID not set");
-    let event = page_view(umami_id);
+    let event = page_view(umami_id, page);
 
     let client = reqwest::Client::new();
     let url = format!("{}/api/collect", umami_url);

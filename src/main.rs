@@ -72,7 +72,7 @@ async fn reply_with_listener<'a, L, ListenerE>(
 }
 
 async fn process_message(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>, token: &Token) -> Result<(), BotErrorKind> {
-    track_hit().await?;
+    track_hit(String::from("message")).await?;
     match message_text(&cx) {
         Some(text) => {
             let processor = TextMessageProcessor {  message: cx, text: text };
@@ -95,7 +95,7 @@ fn message_text(cx: &UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> 
 }
 
 async fn process_inline_query(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, InlineQuery>, token: &Token) -> Result<(), BotErrorKind> {
-    track_hit().await?;
+    track_hit(String::from("inline")).await?;
     let processor = InlineQueryProcessor { query: cx };
     return processor.process(token).await;
 }
