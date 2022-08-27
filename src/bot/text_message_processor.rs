@@ -3,11 +3,11 @@ use async_trait::async_trait;
 
 use teloxide::adaptors::DefaultParseMode;
 use teloxide::prelude::*;
-use teloxide::types::InputFile;
+use teloxide::types::{InputFile, InputMedia, InputMediaPhoto, ParseMode};
 
 use crate::update_processor::{UpdateProcessor, escaped_text};
 use crate::bot_errors::{BotErrorKind};
-use crate::parser::{TextReply, VideoReply}; 
+use crate::parser::{TextReply, VideoReply, ImageReply}; 
 
 pub struct TextMessageProcessor {
     pub message: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>,
@@ -29,6 +29,24 @@ impl UpdateProcessor for TextMessageProcessor {
     async fn send_text_reply(&self, _id: String, text_reply: TextReply) -> Result<(), BotErrorKind> {
         let answer_text = escaped_text(&text_reply);
         self.message.answer(answer_text).await?;
+        Ok(())
+    }
+
+    async fn send_image_reply(&self, _id: String, reply: ImageReply) -> Result<(), BotErrorKind> {
+        let caption = escaped_text(&reply);
+
+        let photos = reply.photos.iter()
+        .map(|image| {
+            let photo = InputMediaPhoto {
+                media: InputFile::Url(image.url.clone()),
+                caption: Some(caption.clone()),
+                parse_mode: Some(ParseMode::MarkdownV2),
+                caption_entities: None
+            };
+            InputMedia::Photo(photo)
+        })
+        .collect::<Vec<_>>();
+        self.message.answer_media_group(photos).await?;
         Ok(())
     }
 }

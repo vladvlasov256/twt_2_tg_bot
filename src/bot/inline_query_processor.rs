@@ -4,12 +4,12 @@ use async_trait::async_trait;
 
 use teloxide::adaptors::DefaultParseMode;
 use teloxide::prelude::*;
-use teloxide::types::{InlineQueryResult, InlineQueryResultArticle, InlineQueryResultVideo, InputMessageContent, InputMessageContentText, ParseMode};
+use teloxide::types::{InlineQueryResult, InlineQueryResultArticle, InlineQueryResultVideo, InputMessageContent, InputMessageContentText, ParseMode, InlineQueryResultPhoto};
 use teloxide::utils::markdown::escape;
 
 use crate::bot_errors::BotErrorKind;
 use crate::update_processor::{UpdateProcessor, escaped_text};
-use crate::parser::{TextReply, VideoReply};
+use crate::parser::{TextReply, VideoReply, ImageReply};
 
 pub struct InlineQueryProcessor {
     pub query: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, InlineQuery>
@@ -23,18 +23,27 @@ impl UpdateProcessor for InlineQueryProcessor {
 
     async fn send_video_reply(&self, id: String, video_reply: VideoReply) -> Result<(), BotErrorKind> {
         let result = InlineQueryResult::Video(self.result_video(id, video_reply));
-        return self.answer(result).await;
+        return self.answer(vec![result]).await;
     }
     
     async fn send_text_reply(&self, id: String, text_reply: TextReply) -> Result<(), BotErrorKind> {
         let result = InlineQueryResult::Article(self.result_article(id, text_reply));
-        return self.answer(result).await;
+        return self.answer(vec![result]).await;
+    }
+
+    async fn send_image_reply(&self, id: String, image_reply: ImageReply) -> Result<(), BotErrorKind> {
+        let results = self.result_photos(id, image_reply).iter()
+        .map(|photo| {
+            InlineQueryResult::Photo(photo.clone())
+        }).collect::<Vec<_>>();
+        return self.answer(results).await;
     }
 }
 
 impl InlineQueryProcessor {
-    async fn answer(&self, result: InlineQueryResult) -> Result<(), BotErrorKind> {
-        self.query.requester.answer_inline_query(self.query_id(), vec![result]).await?;        
+    async fn answer<R: IntoIterator>(&self, results: R) -> Result<(), BotErrorKind> 
+    where R: IntoIterator<Item = InlineQueryResult> {
+        self.query.requester.answer_inline_query(self.query_id(), results).await?;        
         Ok(())
     }
 
@@ -94,6 +103,36 @@ impl InlineQueryProcessor {
             thumb_width: None,
             thumb_height: None,
         }
+    }
+
+    fn result_photos(&self, _id: String, reply: ImageReply) -> Vec<InlineQueryResultPhoto> {
+        let title: String;
+        let description: Option<String>;
+        if let Some(user_name) = reply.user_name.clone() {
+            title = escape(user_name.clone().as_str());
+            description = Some(reply.text.clone());
+        } else {
+            title = reply.text.clone();
+            description = None;
+        }
+
+        reply.photos.iter().map(|photo| {
+            InlineQueryResultPhoto {
+                id: photo.id.clone(),
+                photo_url: photo.url.clone(),
+                thumb_url: photo.url.clone(),
+                photo_width: None,
+                photo_height: None,
+                title: Some(title.clone()),
+                description: description.clone(),
+                caption: Some(escaped_text(&reply)),
+                parse_mode: Some(ParseMode::MarkdownV2),
+                caption_entities: None,
+                reply_markup: None,
+                input_message_content: None
+            }
+        })
+        .collect::<Vec<_>>()
     }
 
     fn message_content(&self, text: String) -> InputMessageContent {

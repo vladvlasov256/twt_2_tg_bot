@@ -22,12 +22,14 @@ pub trait UpdateProcessor: Sync + Send {
     async fn answer(&self, id: String, reply: Reply) -> Result<(), BotErrorKind> {
         match reply {
             Reply::Video(video_data) => self.send_video_reply(id, video_data).await,
-            Reply::Text(text_reply) => self.send_text_reply(id, text_reply).await
+            Reply::Text(text_reply) => self.send_text_reply(id, text_reply).await,
+            Reply::Image(image_reply) => self.send_image_reply(id, image_reply).await
         }
     }
 
     async fn send_video_reply(&self, id: String, video_reply: VideoReply) -> Result<(), BotErrorKind>;
     async fn send_text_reply(&self, id: String, text_reply: TextReply) -> Result<(), BotErrorKind>;
+    async fn send_image_reply(&self, id: String, image_reply: ImageReply) -> Result<(), BotErrorKind>;
 }
 
 /// Returns escaped text with the user name as a bold title.
