@@ -1,9 +1,8 @@
 use std::env;
 use std::string::String;
-use std::{fmt::Debug, sync::Arc};
+use std::{sync::Arc};
 
-use teloxide::dispatching::update_listeners::UpdateListener;
-use teloxide::prelude::*;
+use teloxide::{prelude::*};
 use teloxide::adaptors::DefaultParseMode;
 use teloxide::types::*;
 use egg_mode::*;
@@ -30,18 +29,27 @@ async fn run() -> Result<(), BotErrorKind> {
     let twitter_secret = env::var("TWITTER_SECRET").expect("TWITTER_SECRET not set");
     let twitter_token = twitter_api_token_value(twitter_client_id, twitter_secret).await?;
 
+    let is_webhooks_enabled = env::var("WEBHOOKS_ENABLED").expect("WEBHOOKS_ENABLED not set");
+
     let bot = Bot::from_env().parse_mode(ParseMode::MarkdownV2).auto_send();
-    let listener = webhook(bot.clone()).await;
-    reply_with_listener(bot, listener, twitter_token).await;
+
+    if is_webhooks_enabled.to_lowercase() == String::from("true") {
+        dispatcher(bot.clone(), twitter_token)
+        .dispatch_with_listener(
+            webhook(bot).await,
+            LoggingErrorHandler::with_custom_text("An error from the update listener"),
+        )
+        .await;
+    } else {
+        dispatcher(bot.clone(), twitter_token)
+        .dispatch()
+        .await;
+    }
 
     Ok(())
 }
 
-async fn reply_with_listener<'a, L, ListenerE>(
-    bot: AutoSend<DefaultParseMode<Bot>>,
-    listener: L,
-    token: Token
-) where L: UpdateListener<ListenerE> + Send + 'a, ListenerE: Debug {
+fn dispatcher(bot: AutoSend<DefaultParseMode<Bot>>, token: Token) -> Dispatcher<AutoSend<DefaultParseMode<Bot>>> {
     let token = Arc::new(token);
     let token_copy = token.clone();
     Dispatcher::new(bot)
@@ -64,11 +72,6 @@ async fn reply_with_listener<'a, L, ListenerE>(
                 })
         })
         .setup_ctrlc_handler()
-        .dispatch_with_listener(
-            listener,
-            LoggingErrorHandler::with_custom_text("An error from the update listener"),
-        )
-        .await;
 }
 
 async fn process_message(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>, token: &Token) -> Result<(), BotErrorKind> {
