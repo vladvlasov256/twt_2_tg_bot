@@ -35,16 +35,22 @@ fn page_view(umami_id: String, page: String) -> PageView {
 }
 
 pub async fn track_hit(page: String) -> Result<(), BotErrorKind> {
-    let umami_url = env::var("UMAMI_URL").expect("UMAMI_URL not set");
-    let umami_id = env::var("UMAMI_ID").expect("UMAMI_ID not set");
-    let event = page_view(umami_id, page);
+    let umami_url_result = env::var("UMAMI_URL");
+    let umami_id_result = env::var("UMAMI_ID");
 
-    let client = reqwest::Client::new();
-    let url = format!("{}/api/collect", umami_url);
-    let _res = client.post(&url)
-        .json(&event)
-        .send()
-        .await?;
+    match (umami_url_result, umami_id_result) {
+        (Ok(umami_url), Ok(umami_id)) => {
+            let event = page_view(umami_id, page);
+
+            let client = reqwest::Client::new();
+            let url = format!("{}/api/collect", umami_url);
+            let _res = client.post(&url)
+                .json(&event)
+                .send()
+                .await?;
+        },
+        _ => ()
+    }    
     
     Ok(())
 }
