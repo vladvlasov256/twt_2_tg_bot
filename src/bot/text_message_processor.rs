@@ -33,20 +33,28 @@ impl UpdateProcessor for TextMessageProcessor {
     }
 
     async fn send_image_reply(&self, _id: String, reply: ImageReply) -> Result<(), BotErrorKind> {
-        let caption = escaped_text(&reply);
-
         let photos = reply.photos.iter()
         .map(|image| {
             let photo = InputMediaPhoto {
                 media: InputFile::Url(image.url.clone()),
-                caption: Some(caption.clone()),
-                parse_mode: Some(ParseMode::MarkdownV2),
+                caption: None,
+                parse_mode: None,
                 caption_entities: None
             };
             InputMedia::Photo(photo)
         })
         .collect::<Vec<_>>();
-        self.message.answer_media_group(photos).await?;
+        
+        let messages: Vec<Message> = self.message.answer_media_group(photos).await?;
+
+        if let Some(reply_message) = messages.first() {
+            self.message.requester
+            .edit_message_caption(self.message.chat_id(), reply_message.id)
+            .caption(escaped_text(&reply))
+            .parse_mode(ParseMode::MarkdownV2)
+            .await?;
+        }
+
         Ok(())
     }
 }
