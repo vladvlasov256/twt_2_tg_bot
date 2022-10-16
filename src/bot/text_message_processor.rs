@@ -4,10 +4,11 @@ use async_trait::async_trait;
 use teloxide::adaptors::DefaultParseMode;
 use teloxide::prelude::*;
 use teloxide::types::{InputFile, InputMedia, InputMediaPhoto, ParseMode};
+use teloxide::utils::markdown::{bold, escape};
 
 use crate::update_processor::{UpdateProcessor, escaped_text};
 use crate::bot_errors::{BotErrorKind};
-use crate::parser::{TextReply, VideoReply, ImageReply}; 
+use crate::parser::{TextReply, VideoReply, ImageReply, tweet_id_from_link, tweet_id}; 
 
 pub struct TextMessageProcessor {
     pub message: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>,
@@ -16,8 +17,26 @@ pub struct TextMessageProcessor {
 
 #[async_trait]
 impl UpdateProcessor for TextMessageProcessor {
-    fn text_with_link(&self) -> &String {
-        &self.text
+    fn text_with_link(&self) -> Option<&String> {
+        Some(&self.text)
+    }
+
+    async fn process(&self, token: &egg_mode::Token) -> Result<(), BotErrorKind> {
+        if self.text.as_str().starts_with("/start") {
+            match self.tweet_id_from_deeplink(&self.text) {
+                Ok(id) => {
+                    return self.process_tweet(id, token).await;
+                },
+                _ => {
+                    return self.send_info_message().await;
+                }
+            }
+        } else {
+            match tweet_id_from_link(&self.text) {
+                Ok(id) => { return self.process_tweet(id, token).await },
+                _ => Ok(())
+            }            
+        }
     }
 
     async fn send_video_reply(&self, _id: String, video_reply: VideoReply) -> Result<(), BotErrorKind> {
@@ -27,25 +46,26 @@ impl UpdateProcessor for TextMessageProcessor {
     }
     
     async fn send_text_reply(&self, _id: String, text_reply: TextReply) -> Result<(), BotErrorKind> {
-        let answer_text = escaped_text(&text_reply);
-        self.message.answer(answer_text).await?;
+        self.message.answer(escaped_text(&text_reply))
+        .disable_web_page_preview(true)
+        .await?;
         Ok(())
     }
 
     async fn send_image_reply(&self, _id: String, reply: ImageReply) -> Result<(), BotErrorKind> {
-        let photos = reply.photos.iter()
+        let images = reply.images.iter()
         .map(|image| {
-            let photo = InputMediaPhoto {
+            let image = InputMediaPhoto {
                 media: InputFile::Url(image.url.clone()),
                 caption: None,
                 parse_mode: None,
                 caption_entities: None
             };
-            InputMedia::Photo(photo)
+            InputMedia::Photo(image)
         })
         .collect::<Vec<_>>();
         
-        let messages: Vec<Message> = self.message.answer_media_group(photos).await?;
+        let messages: Vec<Message> = self.message.answer_media_group(images).await?;
 
         if let Some(reply_message) = messages.first() {
             self.message.requester
@@ -55,6 +75,19 @@ impl UpdateProcessor for TextMessageProcessor {
             .await?;
         }
 
+        Ok(())
+    }
+}
+
+impl TextMessageProcessor {
+    fn tweet_id_from_deeplink(&self, text: &String) -> Result<u64, BotErrorKind> {
+        tweet_id(text, r"/start (\d+)")
+    }
+
+    async fn send_info_message(&self) -> Result<(), BotErrorKind> {
+        let info_text = "This bot allows you to convert tweet links to regular Telegram messages. It can download videos, images, and text from tweets. Just send a link herr or address @twt2tgbot in any chat.";
+        let text = format!("{}\n\n{}", bold(escape("What can this bot do?").as_str()), escape(info_text));
+        self.message.answer(text).await?;
         Ok(())
     }
 }

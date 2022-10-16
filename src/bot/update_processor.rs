@@ -5,18 +5,27 @@ use egg_mode::*;
 use crate::bot_errors::BotErrorKind;
 use crate::parser::*;
 
-use teloxide::utils::markdown::{bold, escape};
+use teloxide::{utils::markdown::{bold, escape}};
 
 #[async_trait]
 pub trait UpdateProcessor: Sync + Send {
-    fn text_with_link(&self) -> &String;
+    fn text_with_link(&self) -> Option<&String>;
 
     async fn process(&self, token: &Token) -> Result<(), BotErrorKind> {
-        let id = tweet_id(self.text_with_link())?;
+        match self.text_with_link() {
+            Some(text) => {
+                let id = tweet_id_from_link(text)?;
+                return self.process_tweet(id, token).await;
+            },
+            _ => Ok(())
+        }
+    }
+
+    async fn process_tweet(&self, id: u64, token: &Token) -> Result<(), BotErrorKind> {
         let tweet = tweet::show(id, &token).await?;
         let reply = tweet_to_reply(&tweet.response).await?;
         let id = format!("{}", tweet.id);
-        self.answer(id, reply).await
+        return self.answer(id, reply).await
     }
 
     async fn answer(&self, id: String, reply: Reply) -> Result<(), BotErrorKind> {
@@ -27,8 +36,14 @@ pub trait UpdateProcessor: Sync + Send {
         }
     }
 
-    async fn send_video_reply(&self, id: String, video_reply: VideoReply) -> Result<(), BotErrorKind>;
-    async fn send_text_reply(&self, id: String, text_reply: TextReply) -> Result<(), BotErrorKind>;
+    async fn send_video_reply(&self, _id: String, _video_reply: VideoReply) -> Result<(), BotErrorKind> {
+        Ok(())
+    }
+    
+    async fn send_text_reply(&self, _id: String, _text_reply: TextReply) -> Result<(), BotErrorKind> {
+        Ok(())
+    }
+
     async fn send_image_reply(&self, id: String, image_reply: ImageReply) -> Result<(), BotErrorKind>;
 }
 

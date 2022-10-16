@@ -15,6 +15,7 @@ pub enum BotErrorKind {
     TwitterAPIError(egg_mode::error::Error),
     TextParsingError(regex::Error),
     HTMLDecodeError(htmlescape::DecodeErr),
+    CallbackDataParsingError
 }
 
 impl From<std::io::Error> for BotErrorKind {
@@ -69,6 +70,7 @@ impl fmt::Display for BotError {
             BotErrorKind::TwitterAPIError(error) => write!(f, "{}", error),
             BotErrorKind::TextParsingError(error) => write!(f, "{}", error),
             BotErrorKind::HTMLDecodeError(_) => write!(f, "HTML decoding error"),
+            BotErrorKind::CallbackDataParsingError => write!(f, "Callback data parsing error"),
         }
     }
 }

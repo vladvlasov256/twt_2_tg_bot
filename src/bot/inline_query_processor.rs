@@ -17,8 +17,8 @@ pub struct InlineQueryProcessor {
 
 #[async_trait]
 impl UpdateProcessor for InlineQueryProcessor {
-    fn text_with_link(&self) -> &String { 
-        &self.query.update.query
+    fn text_with_link(&self) -> Option<&String> { 
+       Some(&self.query.update.query)
     }
 
     async fn send_video_reply(&self, id: String, video_reply: VideoReply) -> Result<(), BotErrorKind> {
@@ -32,11 +32,21 @@ impl UpdateProcessor for InlineQueryProcessor {
     }
 
     async fn send_image_reply(&self, id: String, image_reply: ImageReply) -> Result<(), BotErrorKind> {
-        let results = self.result_photos(id, image_reply).iter()
+        let image_count = image_reply.images.len();
+        
+        let results = self.result_photos(id.clone(), image_reply).iter()
         .map(|photo| {
             InlineQueryResult::Photo(photo.clone())
         }).collect::<Vec<_>>();
-        return self.answer(results).await;
+
+        let mut answer = self.query.requester.answer_inline_query(self.query_id(), results);
+
+        if image_count > 1 {
+            answer = answer.switch_pm_text("Get all images").switch_pm_parameter(id.clone());
+        }
+
+        answer.await?;
+        Ok(())
     }
 }
 
@@ -105,7 +115,7 @@ impl InlineQueryProcessor {
         }
     }
 
-    fn result_photos(&self, _id: String, reply: ImageReply) -> Vec<InlineQueryResultPhoto> {
+    fn result_photos(&self, id: String, reply: ImageReply) -> Vec<InlineQueryResultPhoto> {
         let title: String;
         let description: Option<String>;
         if let Some(user_name) = reply.user_name.clone() {
@@ -116,13 +126,13 @@ impl InlineQueryProcessor {
             description = None;
         }
 
-        reply.photos.iter().map(|photo| {
+        reply.images.iter().map(|image| {
             InlineQueryResultPhoto {
-                id: photo.id.clone(),
-                photo_url: photo.url.clone(),
-                thumb_url: photo.url.clone(),
-                photo_width: None,
-                photo_height: None,
+                id: format!("{}_{}", id, image.id),
+                photo_url: image.url.clone(),
+                thumb_url: image.url.clone(),
+                photo_width: Some(image.width),
+                photo_height: Some(image.height),
                 title: Some(title.clone()),
                 description: description.clone(),
                 caption: Some(escaped_text(&reply)),

@@ -1,6 +1,6 @@
 use std::string::String;
 
-use egg_mode::tweet::Tweet;
+use egg_mode::tweet::{Tweet};
 use egg_mode::entities::{MediaEntity, VideoInfo, VideoVariant};
 use regex::Regex;
 use htmlescape::*;
@@ -24,13 +24,16 @@ pub struct TextReply {
 
 pub struct Image {
     pub id: String,
-    pub url: String
+    pub url: String,
+    pub width: i32,
+    pub height: i32
 }
 
 pub struct ImageReply {
     pub user_name: Option<String>,
+    pub thumb_url: Option<String>,
     pub text: String,
-    pub photos: Vec<Image>
+    pub images: Vec<Image>
 }
 
 pub enum Reply {
@@ -39,8 +42,12 @@ pub enum Reply {
     Image(ImageReply)
 }
 
-pub fn tweet_id(text: &String) -> Result<u64, BotErrorKind> {
-    let link_regex = Regex::new(r"twitter.com/\w+/status/(\d+)")?;
+pub fn tweet_id_from_link(text: &String) -> Result<u64, BotErrorKind> {
+    tweet_id(text, r"twitter.com/\w+/status/(\d+)")
+}
+
+pub fn tweet_id(text: &String, re: &str) -> Result<u64, BotErrorKind> {
+    let link_regex = Regex::new(re)?;
     for caps in link_regex.captures_iter(text) {
         if caps.len() != 2 {
             continue
@@ -84,11 +91,12 @@ pub async fn tweet_to_reply(tweet: &Tweet) -> Result<Reply, BotErrorKind> {
         return Ok(Reply::Video(video));
     }
 
-    if let Some(photos) = tweet_image_variant(tweet) {
+    if let Some(images) = tweet_images(tweet) {
         let image = ImageReply {
             user_name: user_name,
+            thumb_url: text_reply.thumb_url,
             text: text_reply.text,            
-            photos: photos
+            images: images
         };
 
         return Ok(Reply::Image(image));
@@ -125,7 +133,7 @@ fn tweet_video_variant(tweet: &Tweet) -> Option<(&VideoVariant, String)> {
 	return None
 }
 
-fn tweet_image_variant(tweet: &Tweet) -> Option<Vec<Image>> {
+fn tweet_images(tweet: &Tweet) -> Option<Vec<Image>> {
     let media_entities: &Vec<MediaEntity>;
     if let Some(entities) = &tweet.extended_entities {
         media_entities = &entities.media
@@ -140,7 +148,9 @@ fn tweet_image_variant(tweet: &Tweet) -> Option<Vec<Image>> {
     let urls = media_entities.iter().map(|entity| {
         Image {
             id: format!("{}", entity.id),
-            url: entity.media_url_https.clone()
+            url: entity.media_url_https.clone(),
+            width: entity.sizes.large.w,
+            height: entity.sizes.large.h
         }
     }).collect::<Vec<_>>();
     

@@ -2,6 +2,7 @@ use std::env;
 use std::string::String;
 use std::{sync::Arc};
 
+use bot::callback_query_processor::CallbackQueryProcessor;
 use teloxide::{prelude::*};
 use teloxide::adaptors::DefaultParseMode;
 use teloxide::types::*;
@@ -51,7 +52,8 @@ async fn run() -> Result<(), BotErrorKind> {
 
 fn dispatcher(bot: AutoSend<DefaultParseMode<Bot>>, token: Token) -> Dispatcher<AutoSend<DefaultParseMode<Bot>>> {
     let token = Arc::new(token);
-    let token_copy = token.clone();
+    let inline_token = token.clone();
+    let callback_token = token.clone();
     Dispatcher::new(bot)
         .messages_handler(move |rx| {
             UnboundedReceiverStream::new(rx)
@@ -65,9 +67,18 @@ fn dispatcher(bot: AutoSend<DefaultParseMode<Bot>>, token: Token) -> Dispatcher<
         .inline_queries_handler(move |rx| {
             UnboundedReceiverStream::new(rx)
                 .for_each_concurrent(None, move |query| {
-                    let token = Arc::clone(&token_copy);
+                    let token = Arc::clone(&inline_token);
                     async move {
                         process_inline_query(query, &*token).await.log_on_error().await;
+                    }
+                })
+        })
+        .callback_queries_handler(move |rx| {
+            UnboundedReceiverStream::new(rx)
+                .for_each_concurrent(None, move |query| {
+                    let token = Arc::clone(&callback_token);
+                    async move {
+                        process_callback_query(query, &*token).await.log_on_error().await;
                     }
                 })
         })
@@ -75,6 +86,7 @@ fn dispatcher(bot: AutoSend<DefaultParseMode<Bot>>, token: Token) -> Dispatcher<
 }
 
 async fn process_message(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>, token: &Token) -> Result<(), BotErrorKind> {
+    log::info!("Received a message");
     track_hit(String::from("message")).await?;
     match message_text(&cx) {
         Some(text) => {
@@ -98,7 +110,14 @@ fn message_text(cx: &UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, Message>) -> 
 }
 
 async fn process_inline_query(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, InlineQuery>, token: &Token) -> Result<(), BotErrorKind> {
+    log::info!("Received an inline query");
     track_hit(String::from("inline")).await?;
     let processor = InlineQueryProcessor { query: cx };
+    return processor.process(token).await;
+}
+
+async fn process_callback_query(cx: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, CallbackQuery>, token: &Token) -> Result<(), BotErrorKind> {
+    log::info!("Received a callback query");
+    let processor = CallbackQueryProcessor { query: cx };
     return processor.process(token).await;
 }
