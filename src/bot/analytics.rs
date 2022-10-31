@@ -1,7 +1,7 @@
 use std::string::String;
 use std::env;
 
-use crate::bot_errors::{BotErrorKind};
+use crate::bot_errors::{BotError};
 use serde::{Serialize};
 
 #[derive(Serialize, Debug)]
@@ -34,7 +34,7 @@ fn page_view(umami_id: String, page: String) -> PageView {
     }
 }
 
-pub async fn track_hit(page: String) -> Result<(), BotErrorKind> {
+pub async fn track_hit(page: String) -> Result<(), BotError> {
     let umami_url_result = env::var("UMAMI_URL");
     let umami_id_result = env::var("UMAMI_ID");
 

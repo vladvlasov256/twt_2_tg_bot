@@ -2,6 +2,7 @@ use std::error;
 use std::fmt;
 
 use teloxide::RequestError;
+use url::ParseError;
 
 #[derive(Debug)]
 pub struct BotError(BotErrorKind);
@@ -18,45 +19,51 @@ pub enum BotErrorKind {
     CallbackDataParsingError
 }
 
-impl From<std::io::Error> for BotErrorKind {
-    fn from(error: std::io::Error) -> Self {
-        BotErrorKind::Io(error)
-    }
-}
-
-impl From<reqwest::Error> for BotErrorKind {
-    fn from(error: reqwest::Error) -> Self {
-        BotErrorKind::HTTPError(error)
-    }
-}
-
-impl From<RequestError> for BotErrorKind {
-    fn from(error: RequestError) -> Self {
-        BotErrorKind::MessageSendingError(error)
-    }
-}
-
-impl From<egg_mode::error::Error> for BotErrorKind {
-    fn from(error: egg_mode::error::Error) -> Self {
-        BotErrorKind::TwitterAPIError(error)
-    }
-}
-
-impl From<regex::Error> for BotErrorKind {
-    fn from(error: regex::Error) -> Self {
-        BotErrorKind::TextParsingError(error)
-    }
-}
-
-impl From<htmlescape::DecodeErr> for BotErrorKind {
-    fn from(error: htmlescape::DecodeErr) -> Self {
-        BotErrorKind::HTMLDecodeError(error)
-    }
-}
-
 impl From<BotErrorKind> for BotError {
-    fn from(kind: BotErrorKind) -> Self {
-        BotError(kind)
+    fn from(error: BotErrorKind) -> Self {
+        BotError(error)
+    }
+}
+
+impl From<std::io::Error> for BotError {
+    fn from(error: std::io::Error) -> Self {
+        BotError(BotErrorKind::Io(error))
+    }
+}
+
+impl From<reqwest::Error> for BotError {
+    fn from(error: reqwest::Error) -> Self {
+        BotError(BotErrorKind::HTTPError(error))
+    }
+}
+
+impl From<RequestError> for BotError {
+    fn from(error: RequestError) -> Self {
+        BotError(BotErrorKind::MessageSendingError(error))
+    }
+}
+
+impl From<egg_mode::error::Error> for BotError {
+    fn from(error: egg_mode::error::Error) -> Self {
+        BotError(BotErrorKind::TwitterAPIError(error))
+    }
+}
+
+impl From<regex::Error> for BotError {
+    fn from(error: regex::Error) -> Self {
+        BotError(BotErrorKind::TextParsingError(error))
+    }
+}
+
+impl From<ParseError> for BotError {
+    fn from(_error: ParseError) -> Self {
+        BotError(BotErrorKind::TweetParsingError)
+    }
+}
+
+impl From<htmlescape::DecodeErr> for BotError {
+    fn from(error: htmlescape::DecodeErr) -> Self {
+        BotError(BotErrorKind::HTMLDecodeError(error))
     }
 }
 

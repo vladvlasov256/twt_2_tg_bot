@@ -1,1 +1,0 @@
-web: ./target/release/twt_2_tg_bot

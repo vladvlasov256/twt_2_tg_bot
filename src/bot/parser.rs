@@ -5,33 +5,34 @@ use egg_mode::entities::{MediaEntity, VideoInfo, VideoVariant};
 use regex::Regex;
 use htmlescape::*;
 use mime;
+use reqwest::Url;
 
-use crate::bot_errors::BotErrorKind;
+use crate::bot_errors::{BotError, BotErrorKind};
 
 pub struct VideoReply {
     pub text: String,
     pub user_name: Option<String>,
-    pub url: String,
+    pub url: Url,
     pub mime_type: mime::Mime,
-    pub thumb_url: String
+    pub thumb_url: Url
 }
 
 pub struct TextReply {
     pub user_name: Option<String>,
-    pub thumb_url: Option<String>,
+    pub thumb_url: Option<Url>,
     pub text: String
 }
 
 pub struct Image {
     pub id: String,
-    pub url: String,
+    pub url: Url,
     pub width: i32,
     pub height: i32
 }
 
 pub struct ImageReply {
     pub user_name: Option<String>,
-    pub thumb_url: Option<String>,
+    pub thumb_url: Option<Url>,
     pub text: String,
     pub images: Vec<Image>
 }
@@ -42,11 +43,11 @@ pub enum Reply {
     Image(ImageReply)
 }
 
-pub fn tweet_id_from_link(text: &String) -> Result<u64, BotErrorKind> {
+pub fn tweet_id_from_link(text: &String) -> Result<u64, BotError> {
     tweet_id(text, r"twitter.com/\w+/status/(\d+)")
 }
 
-pub fn tweet_id(text: &String, re: &str) -> Result<u64, BotErrorKind> {
+pub fn tweet_id(text: &String, re: &str) -> Result<u64, BotError> {
     let link_regex = Regex::new(re)?;
     for caps in link_regex.captures_iter(text) {
         if caps.len() != 2 {
@@ -64,10 +65,10 @@ pub fn tweet_id(text: &String, re: &str) -> Result<u64, BotErrorKind> {
         }
     }
 
-    return Err(BotErrorKind::TweetParsingError);
+    return Err(BotError::from(BotErrorKind::TweetParsingError));
 }
 
-pub async fn tweet_to_reply(tweet: &Tweet) -> Result<Reply, BotErrorKind> {
+pub async fn tweet_to_reply(tweet: &Tweet) -> Result<Reply, BotError> {
 	let text_reply = tweet_to_text_reply(&tweet)?;
 
     let user_name: Option<String>;
@@ -80,10 +81,13 @@ pub async fn tweet_to_reply(tweet: &Tweet) -> Result<Reply, BotErrorKind> {
     if let Some(video_variant_result) = tweet_video_variant(tweet) {
         let (video_variant, thumb_url) = video_variant_result;
 
+        let url = Url::parse(video_variant.url.as_str())?;
+        let thumb_url = Url::parse(thumb_url.as_str())?;
+
         let video = VideoReply {
             text: text_reply.text,
             user_name: user_name,
-            url: String::from(video_variant.url.as_str()),
+            url: url,
             mime_type: video_variant.content_type.clone(),
             thumb_url: thumb_url
         };
@@ -145,25 +149,30 @@ fn tweet_images(tweet: &Tweet) -> Option<Vec<Image>> {
         return None
     }
 
-    let urls = media_entities.iter().map(|entity| {
-        Image {
-            id: format!("{}", entity.id),
-            url: entity.media_url_https.clone(),
-            width: entity.sizes.large.w,
-            height: entity.sizes.large.h
+    let urls = media_entities.iter().filter_map(|entity| {
+        match Url::parse(entity.media_url_https.as_str()) {
+            Ok(url) => Some(Image {
+                id: format!("{}", entity.id),
+                url: url,
+                width: entity.sizes.large.w,
+                height: entity.sizes.large.h
+            }),
+            _ => None
         }
+        
     }).collect::<Vec<_>>();
     
     return Some(urls)
 }
 
-fn tweet_to_text_reply(tweet: &Tweet) -> Result<TextReply, BotErrorKind> {
+fn tweet_to_text_reply(tweet: &Tweet) -> Result<TextReply, BotError> {
     let text = decode_html(&tweet.text).unwrap_or(String::from(""));
     if let Some(user) = tweet.user.as_ref() {
         let name = decode_html(&user.name)?;
+        let thumb_url = Url::parse(user.profile_image_url_https.as_str())?;
         return Ok(TextReply {
             user_name: Some(name),
-            thumb_url: Some(user.profile_image_url_https.clone()),
+            thumb_url: Some(thumb_url),
             text: text
         });
     } else {

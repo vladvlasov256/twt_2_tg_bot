@@ -2,36 +2,35 @@ use std::string::String;
 
 use async_trait::async_trait;
 
-use teloxide::adaptors::DefaultParseMode;
 use teloxide::prelude::*;
 use teloxide::types::{InlineQueryResult, InlineQueryResultArticle, InlineQueryResultVideo, InputMessageContent, InputMessageContentText, ParseMode, InlineQueryResultPhoto};
 use teloxide::utils::markdown::escape;
 
-use crate::bot_errors::BotErrorKind;
+use crate::bot_errors::{BotError};
 use crate::update_processor::{UpdateProcessor, escaped_text};
 use crate::parser::{TextReply, VideoReply, ImageReply};
 
 pub struct InlineQueryProcessor {
-    pub query: UpdateWithCx<AutoSend<DefaultParseMode<Bot>>, InlineQuery>
+    pub query: InlineQuery
 }
 
 #[async_trait]
 impl UpdateProcessor for InlineQueryProcessor {
     fn text_with_link(&self) -> Option<&String> { 
-       Some(&self.query.update.query)
+       Some(&self.query.query)
     }
 
-    async fn send_video_reply(&self, id: String, video_reply: VideoReply) -> Result<(), BotErrorKind> {
+    async fn send_video_reply(&self, bot: Bot, id: String, video_reply: VideoReply) -> Result<(), BotError> {
         let result = InlineQueryResult::Video(self.result_video(id, video_reply));
-        return self.answer(vec![result]).await;
+        return self.answer(bot, vec![result]).await;
     }
     
-    async fn send_text_reply(&self, id: String, text_reply: TextReply) -> Result<(), BotErrorKind> {
+    async fn send_text_reply(&self, bot: Bot, id: String, text_reply: TextReply) -> Result<(), BotError> {
         let result = InlineQueryResult::Article(self.result_article(id, text_reply));
-        return self.answer(vec![result]).await;
+        return self.answer(bot, vec![result]).await;
     }
 
-    async fn send_image_reply(&self, id: String, image_reply: ImageReply) -> Result<(), BotErrorKind> {
+    async fn send_image_reply(&self, bot: Bot, id: String, image_reply: ImageReply) -> Result<(), BotError> {
         let image_count = image_reply.images.len();
         
         let results = self.result_photos(id.clone(), image_reply).iter()
@@ -39,7 +38,7 @@ impl UpdateProcessor for InlineQueryProcessor {
             InlineQueryResult::Photo(photo.clone())
         }).collect::<Vec<_>>();
 
-        let mut answer = self.query.requester.answer_inline_query(self.query_id(), results);
+        let mut answer = bot.answer_inline_query(self.query_id(), results);
 
         if image_count > 1 {
             answer = answer.switch_pm_text("Get all images").switch_pm_parameter(id.clone());
@@ -51,14 +50,14 @@ impl UpdateProcessor for InlineQueryProcessor {
 }
 
 impl InlineQueryProcessor {
-    async fn answer<R: IntoIterator>(&self, results: R) -> Result<(), BotErrorKind> 
+    async fn answer<R: IntoIterator>(&self, bot: Bot, results: R) -> Result<(), BotError> 
     where R: IntoIterator<Item = InlineQueryResult> {
-        self.query.requester.answer_inline_query(self.query_id(), results).await?;        
+        bot.answer_inline_query(self.query_id(), results).await?;
         Ok(())
     }
 
     fn query_id(&self) -> String {
-        self.query.update.id.clone()
+        self.query.id.clone()
     }
 
     fn result_video(&self, id: String, video_reply: VideoReply) -> InlineQueryResultVideo {
