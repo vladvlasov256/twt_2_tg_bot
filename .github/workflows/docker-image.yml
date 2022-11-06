@@ -14,6 +14,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Build the Docker image
       run: |
              docker build . --file Dockerfile --tag ghcr.io/vladvlasov256/twt2tgbot:latest
