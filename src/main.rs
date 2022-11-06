@@ -5,7 +5,6 @@ use std::string::String;
 use bot::callback_query_processor::CallbackQueryProcessor;
 use teloxide::dispatching::DefaultKey;
 use teloxide::{prelude::*, RequestError};
-use teloxide::adaptors::DefaultParseMode;
 use teloxide::types::*;
 use egg_mode::*;
 

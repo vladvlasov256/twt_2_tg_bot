@@ -17,5 +17,4 @@ jobs:
     - name: Build the Docker image
       run: |
              docker build . --file Dockerfile --tag twt2tgbot:latest
-             docker run twt2tgbot:latest
-             docker push twt2tgbot:latest
+             docker push ghcr.io/vladvlasov256/twt2tgbot:latest
