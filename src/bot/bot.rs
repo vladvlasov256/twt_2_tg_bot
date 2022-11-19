@@ -7,3 +7,4 @@ pub mod update_processor;
 pub mod twitter_utils;
 pub mod analytics;
 mod parser;
+mod thread_parser;

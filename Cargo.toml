@@ -1,6 +1,6 @@
 [package]
 name = "twt_2_tg_bot"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Vladimir Vlasov <vladimir.vlasov@extcom.com>"]
 edition = "2018"
 

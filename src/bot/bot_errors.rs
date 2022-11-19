@@ -16,7 +16,10 @@ pub enum BotErrorKind {
     TwitterAPIError(egg_mode::error::Error),
     TextParsingError(regex::Error),
     HTMLDecodeError(htmlescape::DecodeErr),
-    CallbackDataParsingError
+    CallbackDataParsingError,
+    MissedConversationId,
+    InvalidThreadResponse,
+    MissedUserInTweet,
 }
 
 impl From<BotErrorKind> for BotError {
@@ -78,6 +81,9 @@ impl fmt::Display for BotError {
             BotErrorKind::TextParsingError(error) => write!(f, "{}", error),
             BotErrorKind::HTMLDecodeError(_) => write!(f, "HTML decoding error"),
             BotErrorKind::CallbackDataParsingError => write!(f, "Callback data parsing error"),
+            BotErrorKind::MissedConversationId => write!(f, "Convesation ID is missed for a thread"), 
+            BotErrorKind::InvalidThreadResponse => write!(f, "Invalid thread response"),     
+            BotErrorKind::MissedUserInTweet => write!(f, "Missed user in tweet"),           
         }
     }
 }

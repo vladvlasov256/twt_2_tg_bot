@@ -20,39 +20,73 @@ impl UpdateProcessor for InlineQueryProcessor {
        Some(&self.query.query)
     }
 
-    async fn send_video_reply(&self, bot: Bot, id: String, video_reply: VideoReply) -> Result<(), BotError> {
-        let result = InlineQueryResult::Video(self.result_video(id, video_reply));
-        return self.answer(bot, vec![result]).await;
+    async fn send_video_reply(&self, bot: Bot, id: String, video_reply: VideoReply, included_in_thread: bool) -> Result<(), BotError> {
+        let result = InlineQueryResult::Video(self.result_video(id.clone(), video_reply));
+
+        let pm_text = match included_in_thread {
+            true => Some(String::from("Unroll")),
+            false => None
+        };
+        let pm_parameter = match included_in_thread {
+            true => Some(String::from(format!("unroll_{}", id.clone()))),
+            false => None
+        };
+
+        return self.answer(bot, vec![result], pm_text, pm_parameter).await;
     }
     
-    async fn send_text_reply(&self, bot: Bot, id: String, text_reply: TextReply) -> Result<(), BotError> {
-        let result = InlineQueryResult::Article(self.result_article(id, text_reply));
-        return self.answer(bot, vec![result]).await;
+    async fn send_text_reply(&self, bot: Bot, id: String, text_reply: TextReply, included_in_thread: bool) -> Result<(), BotError> {
+        let result = InlineQueryResult::Article(self.result_article(id.clone(), text_reply));
+
+        let pm_text = match included_in_thread {
+            true => Some(String::from("Unroll")),
+            false => None
+        };
+        let pm_parameter = match included_in_thread {
+            true => Some(String::from(format!("unroll_{}", id.clone()))),
+            false => None
+        };
+
+        return self.answer(bot, vec![result], pm_text, pm_parameter).await;
     }
 
-    async fn send_image_reply(&self, bot: Bot, id: String, image_reply: ImageReply) -> Result<(), BotError> {
+    async fn send_image_reply(&self, bot: Bot, id: String, image_reply: ImageReply, included_in_thread: bool) -> Result<(), BotError> {  
         let image_count = image_reply.images.len();
-        
+
         let results = self.result_photos(id.clone(), image_reply).iter()
         .map(|photo| {
             InlineQueryResult::Photo(photo.clone())
         }).collect::<Vec<_>>();
 
-        let mut answer = bot.answer_inline_query(self.query_id(), results);
+        let pm_text = match (included_in_thread, image_count > 1) {
+            (true, false) => Some(String::from("Unroll")),
+            (false, true) => Some(String::from("All images")),
+            (true, true) => Some(String::from("More")),
+            _ => None
+        };
+        let pm_parameter = match (included_in_thread, image_count > 1) {
+            (true, false) => Some(String::from(format!("unroll_{}", id.clone()))),
+            (_, true) => Some(id.clone()),
+            _ => None
+        };
 
-        if image_count > 1 {
-            answer = answer.switch_pm_text("Get all images").switch_pm_parameter(id.clone());
-        }
-
-        answer.await?;
-        Ok(())
+        return self.answer(bot, results, pm_text, pm_parameter).await;
     }
 }
 
 impl InlineQueryProcessor {
-    async fn answer<R: IntoIterator>(&self, bot: Bot, results: R) -> Result<(), BotError> 
+    async fn answer<R: IntoIterator>(&self, bot: Bot, results: R, pm_text: Option<String>, pm_parameter: Option<String>) -> Result<(), BotError> 
     where R: IntoIterator<Item = InlineQueryResult> {
-        bot.answer_inline_query(self.query_id(), results).await?;
+        let mut answer = bot.answer_inline_query(self.query_id(), results);
+
+        if let Some(text) = pm_text {
+            answer = answer.switch_pm_text(text);
+        }
+        if let Some(parameter) = pm_parameter {
+            answer = answer.switch_pm_parameter(parameter);
+        }
+        
+        answer.await?;
         Ok(())
     }
 

@@ -47,7 +47,7 @@ pub async fn track_hit(page: String) -> Result<(), BotError> {
             let _res = client.post(&url)
                 .json(&event)
                 .send()
-                .await?;
+                .await;
         },
         _ => ()
     }    

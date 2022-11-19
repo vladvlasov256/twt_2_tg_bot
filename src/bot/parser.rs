@@ -36,11 +36,17 @@ pub struct ImageReply {
     pub text: String,
     pub images: Vec<Image>
 }
+pub struct ThreadReply {
+    pub user_name: Option<String>,
+    pub thumb_url: Option<Url>,
+    pub texts: Vec<String>
+}
 
 pub enum Reply {
     Video(VideoReply),
     Text(TextReply),
-    Image(ImageReply)
+    Image(ImageReply),
+    Thread(ThreadReply)
 }
 
 pub fn tweet_id_from_link(text: &String) -> Result<u64, BotError> {
@@ -216,5 +222,15 @@ impl ReplyData for ImageReply {
 
     fn text(&self) -> String {
         return self.text.clone();
+    }
+}
+
+impl ReplyData for ThreadReply {
+    fn user_name(&self) -> Option<String> {
+        return self.user_name.clone();
+    }
+
+    fn text(&self) -> String {
+        return self.texts.first().unwrap_or(&String::from("")).clone();
     }
 }
