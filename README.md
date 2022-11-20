@@ -19,6 +19,7 @@ The bot allows to unroll threads.
 ## Text converter
 
 Some tweets may contain line breaks or even dialogs.
+
 ![Tweet with several lines of text](screenshots/original_text.jpg)
 
 Such tweets are barely readable in Telegram. The bot keeps original formatting.
