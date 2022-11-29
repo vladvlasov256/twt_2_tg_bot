@@ -18,7 +18,7 @@ mime = "0.3.16"
 log = "0.4.8"
 pretty_env_logger = "0.4.0"
 tokio = { version = "1.8", features = ["rt-multi-thread", "macros"] }
-egg-mode = { git = "https://github.com/egg-mode-rs/egg-mode", rev = "6b81073eba9" }
+egg-mode = { git = "https://github.com/egg-mode-rs/egg-mode", rev = "a1426a7d6b82a475a936a0a355c0fea81551663b" }
 regex = "1.5"
 htmlescape = "0.3.1"
 tempfile = "3.2.0"
