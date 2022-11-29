@@ -4,13 +4,14 @@ use async_trait::async_trait;
 
 use egg_mode::tweet;
 use teloxide::prelude::*;
-use teloxide::types::{ParseMode, InputMediaPhoto, InputFile, InputMedia};
+use teloxide::types::{ParseMode, InputMediaPhoto, InputFile, InputMedia, InputMediaVideo};
 use teloxide::utils::markdown::escape;
 
+use crate::analytics::track_hit;
 use crate::bot_errors::{BotError, BotErrorKind};
-use crate::thread_parser::tweet_to_thread;
+use crate::thread_parser::{tweet_to_thread, ThreadReply};
 use crate::update_processor::{UpdateProcessor, escaped_text};
-use crate::parser::{ImageReply, tweet_to_reply, Reply, ThreadReply};
+use crate::parser::{tweet_to_reply, Reply, ParsedMedia};
 
 pub struct CallbackQueryProcessor {
     pub query: CallbackQuery
@@ -27,17 +28,57 @@ impl UpdateProcessor for CallbackQueryProcessor {
 
         // Processes "Unroll" reply button from a regular text message.
         if data.starts_with("unroll_") {
+            track_hit(String::from("unroll")).await?;
             let tweet_id = data.strip_prefix("unroll_").unwrap();
             let id = tweet_id.parse().unwrap();
             let tweet = tweet::show(id, &token).await?.response;
             let reply = tweet_to_thread(&tweet, &token, self.first_chunk_len(), 3072).await?;
-            return self.answer(bot, String::from(tweet_id), Reply::Thread(reply), false).await;
+            return self.send_thread_reply(bot, String::from(tweet_id), reply, false).await;
         } else {
+            track_hit(String::from("callback")).await?;
             let id = data.parse().unwrap();
             let tweet = tweet::show(id, &token).await?.response;
             let reply = tweet_to_reply(&tweet).await?;
             return self.answer(bot, data, reply, false).await;
         }
+    }
+
+    async fn answer(&self, bot: Bot, _id: String, reply: Reply, _included_in_thread: bool) -> Result<(), BotError> {
+        let images = reply.media_entities.iter()
+        .map(|media_entity| {
+            match media_entity {
+                ParsedMedia::Image(image) => InputMedia::Photo(InputMediaPhoto {
+                    media: InputFile::url(image.url.clone()),
+                    caption: None,
+                    parse_mode: None,
+                    caption_entities: None
+                }),
+                ParsedMedia::Video(video) => InputMedia::Video(InputMediaVideo {
+                    media: InputFile::url(video.url.clone()),
+                    thumb: None,
+                    caption: None,
+                    parse_mode: None,
+                    caption_entities: None,
+                    width: None,
+                    height: None,
+                    duration: None,
+                    supports_streaming: None,
+                })
+            }            
+        }).collect::<Vec<_>>();
+
+        let chat_id = self.chat_id()?;
+        let messages: Vec<Message> = bot.send_media_group(chat_id.clone(), images).await?;
+
+        if let Some(reply_message) = messages.first() {
+            bot
+            .edit_message_caption(chat_id.clone(), reply_message.id)
+            .caption(escaped_text(&reply))
+            .parse_mode(ParseMode::MarkdownV2)
+            .await?;
+        }
+
+        Ok(())
     }
     
     async fn send_thread_reply(&self, bot: Bot, _id: String, thread_reply: ThreadReply, _included_in_thread: bool) -> Result<(), BotError> {
@@ -73,29 +114,7 @@ impl UpdateProcessor for CallbackQueryProcessor {
         Ok(())
     }
 
-    async fn send_image_reply(&self, bot: Bot, _id: String, reply: ImageReply, _included_in_thread: bool) -> Result<(), BotError> {
-        let images = reply.images.iter()
-        .map(|image| {
-            let image = InputMediaPhoto {
-                media: InputFile::url(image.url.clone()),
-                caption: None,
-                parse_mode: None,
-                caption_entities: None
-            };
-            InputMedia::Photo(image)
-        }).collect::<Vec<_>>();
-
-        let chat_id = self.chat_id()?;
-        let messages: Vec<Message> = bot.send_media_group(chat_id.clone(), images).await?;
-
-        if let Some(reply_message) = messages.first() {
-            bot
-            .edit_message_caption(chat_id.clone(), reply_message.id)
-            .caption(escaped_text(&reply))
-            .parse_mode(ParseMode::MarkdownV2)
-            .await?;
-        }
-
+    async fn track_hit_if_necessary(&self) -> Result<(), BotError> {
         Ok(())
     }
 }

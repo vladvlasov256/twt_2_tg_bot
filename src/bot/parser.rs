@@ -1,7 +1,7 @@
 use std::string::String;
 
-use egg_mode::tweet::{Tweet};
-use egg_mode::entities::{MediaEntity, VideoInfo, VideoVariant};
+use egg_mode::tweet::Tweet;
+use egg_mode::entities::MediaEntity;
 use regex::Regex;
 use htmlescape::*;
 use mime;
@@ -9,44 +9,32 @@ use reqwest::Url;
 
 use crate::bot_errors::{BotError, BotErrorKind};
 
-pub struct VideoReply {
-    pub text: String,
-    pub user_name: Option<String>,
+pub struct VideoEntity {
+    pub id: String,
     pub url: Url,
+    pub thumb_url: Url,
     pub mime_type: mime::Mime,
-    pub thumb_url: Url
+    pub width: i32,
+    pub height: i32
 }
 
-pub struct TextReply {
-    pub user_name: Option<String>,
-    pub thumb_url: Option<Url>,
-    pub text: String
-}
-
-pub struct Image {
+pub struct ImageEntity {
     pub id: String,
     pub url: Url,
     pub width: i32,
     pub height: i32
 }
 
-pub struct ImageReply {
+pub enum ParsedMedia {
+    Video(VideoEntity),
+    Image(ImageEntity),
+}
+
+pub struct Reply {
     pub user_name: Option<String>,
     pub thumb_url: Option<Url>,
     pub text: String,
-    pub images: Vec<Image>
-}
-pub struct ThreadReply {
-    pub user_name: Option<String>,
-    pub thumb_url: Option<Url>,
-    pub texts: Vec<String>
-}
-
-pub enum Reply {
-    Video(VideoReply),
-    Text(TextReply),
-    Image(ImageReply),
-    Thread(ThreadReply)
+    pub media_entities: Vec<ParsedMedia>
 }
 
 pub fn tweet_id_from_link(text: &String) -> Result<u64, BotError> {
@@ -75,119 +63,80 @@ pub fn tweet_id(text: &String, re: &str) -> Result<u64, BotError> {
 }
 
 pub async fn tweet_to_reply(tweet: &Tweet) -> Result<Reply, BotError> {
-	let text_reply = tweet_to_text_reply(&tweet)?;
-
-    let user_name: Option<String>;
-    if let Some(reply_user_name) = text_reply.user_name.clone() {
-        user_name = Some(reply_user_name);
-    } else {
-        user_name = None;
-    }
-
-    if let Some(video_variant_result) = tweet_video_variant(tweet) {
-        let (video_variant, thumb_url) = video_variant_result;
-
-        let url = Url::parse(video_variant.url.as_str())?;
-        let thumb_url = Url::parse(thumb_url.as_str())?;
-
-        let video = VideoReply {
-            text: text_reply.text,
-            user_name: user_name,
-            url: url,
-            mime_type: video_variant.content_type.clone(),
-            thumb_url: thumb_url
-        };
-
-        return Ok(Reply::Video(video));
-    }
-
-    if let Some(images) = tweet_images(tweet) {
-        let image = ImageReply {
-            user_name: user_name,
-            thumb_url: text_reply.thumb_url,
-            text: text_reply.text,            
-            images: images
-        };
-
-        return Ok(Reply::Image(image));
-    }
-
-    Ok(Reply::Text(text_reply))
-}
-
-fn tweet_video_variant(tweet: &Tweet) -> Option<(&VideoVariant, String)> {
-    let media_entities: &Vec<MediaEntity>;
-    if let Some(entities) = &tweet.extended_entities {
-        media_entities = &entities.media
-    } else {
-        return None
-    }
-
-    if media_entities.is_empty() {
-        return None
-    }
-
-    let video_info: &VideoInfo;
-    if let Some(info) = &media_entities[0].video_info {
-        video_info = info
-    } else {
-        return None
-    }
-
-    for variant in &video_info.variants {
-        if variant.content_type == "video/mp4" {
-            return Some((variant, media_entities[0].media_url_https.clone()))
-        }
-    }
-
-	return None
-}
-
-fn tweet_images(tweet: &Tweet) -> Option<Vec<Image>> {
-    let media_entities: &Vec<MediaEntity>;
-    if let Some(entities) = &tweet.extended_entities {
-        media_entities = &entities.media
-    } else {
-        return None
-    }
-
-    if media_entities.is_empty() {
-        return None
-    }
-
-    let urls = media_entities.iter().filter_map(|entity| {
-        match Url::parse(entity.media_url_https.as_str()) {
-            Ok(url) => Some(Image {
-                id: format!("{}", entity.id),
-                url: url,
-                width: entity.sizes.large.w,
-                height: entity.sizes.large.h
-            }),
-            _ => None
-        }
-        
-    }).collect::<Vec<_>>();
-    
-    return Some(urls)
-}
-
-fn tweet_to_text_reply(tweet: &Tweet) -> Result<TextReply, BotError> {
-    let text = decode_html(&tweet.text).unwrap_or(String::from(""));
+    let text = tweet_text_to_displayable_string(&tweet.text);
     if let Some(user) = tweet.user.as_ref() {
         let name = decode_html(&user.name)?;
         let thumb_url = Url::parse(user.profile_image_url_https.as_str())?;
-        return Ok(TextReply {
+        return Ok(Reply {
             user_name: Some(name),
             thumb_url: Some(thumb_url),
-            text: text
+            text: text,
+            media_entities: tweet_media(&tweet),
         });
     } else {
-        return Ok(TextReply { 
+        return Ok(Reply { 
             user_name: None,
             thumb_url: None,
-            text: text
+            text: text,
+            media_entities: tweet_media(&tweet),
         });
     }
+}
+
+pub fn tweet_text_to_displayable_string(text: &str) -> String {
+    let text = decode_html(&text).unwrap_or(String::from(""));
+    if let Ok(trimmed_text) = trim_short_link(&text) {
+        return trimmed_text;
+    }
+    text
+}
+
+pub fn trim_short_link(s: &String) -> Result<String, BotError> {
+    let mut s = s.clone();
+    let regex = Regex::new(r"\shttps://t\.co/[\w\./]+$")?;
+    if let Some(mat) = regex.find_iter(&s.as_str()).last() {
+        s.replace_range(mat.range(), "");
+        return Ok(String::from(s));
+    }
+    Ok(s)
+}
+
+fn tweet_media(tweet: &Tweet) -> Vec<ParsedMedia> {
+    let media_entities: &Vec<MediaEntity>;
+    if let Some(entities) = &tweet.extended_entities {
+        media_entities = &entities.media;
+    } else {
+        return vec![]
+    }
+
+    return media_entities.iter().filter_map(|entity| {
+        if let Ok(thumb_url) = Url::parse(entity.media_url_https.clone().as_str()) {
+            let id = format!("{}", entity.id);
+            if let Some(info) = &entity.video_info {
+                for variant in info.variants.iter().filter(|v| v.content_type == "video/mp4") {
+                    if let Ok(url) = Url::parse(variant.url.as_str()) {
+                        return Some(ParsedMedia::Video(VideoEntity {
+                            id,
+                            url: url,
+                            thumb_url: thumb_url,
+                            mime_type: variant.content_type.clone(),
+                            width: entity.sizes.large.w,
+                            height: entity.sizes.large.h
+                        }));
+                    }
+                }
+            }
+
+            return Some(ParsedMedia::Image(ImageEntity {
+                id,
+                url: thumb_url,
+                width: entity.sizes.large.w,
+                height: entity.sizes.large.h
+            }));
+        }
+
+        None        
+    }).collect::<Vec<_>>();
 }
 
 pub trait ReplyData {
@@ -195,42 +144,12 @@ pub trait ReplyData {
     fn text(&self) -> String;
 }
 
-impl ReplyData for VideoReply {
+impl ReplyData for Reply {
     fn user_name(&self) -> Option<String> {
         return self.user_name.clone();
     }
 
     fn text(&self) -> String {
         return self.text.clone();
-    }
-}
-
-impl ReplyData for TextReply {
-    fn user_name(&self) -> Option<String> {
-        return self.user_name.clone();
-    }
-
-    fn text(&self) -> String {
-        return self.text.clone();
-    }
-}
-
-impl ReplyData for ImageReply {
-    fn user_name(&self) -> Option<String> {
-        return self.user_name.clone();
-    }
-
-    fn text(&self) -> String {
-        return self.text.clone();
-    }
-}
-
-impl ReplyData for ThreadReply {
-    fn user_name(&self) -> Option<String> {
-        return self.user_name.clone();
-    }
-
-    fn text(&self) -> String {
-        return self.texts.first().unwrap_or(&String::from("")).clone();
     }
 }

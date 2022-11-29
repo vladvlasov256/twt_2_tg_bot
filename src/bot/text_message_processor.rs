@@ -1,13 +1,16 @@
+use std::convert::TryInto;
 use std::string::String;
 use async_trait::async_trait;
 
 use teloxide::prelude::*;
-use teloxide::types::{InputFile, InputMedia, InputMediaPhoto, ParseMode, InlineKeyboardMarkup, InlineKeyboardButton};
+use teloxide::types::{InputFile, InputMedia, InputMediaPhoto, ParseMode, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaVideo};
 use teloxide::utils::markdown::{bold, escape};
 
+use crate::analytics::track_hit;
+use crate::thread_parser::ThreadReply;
 use crate::update_processor::{UpdateProcessor, escaped_text};
 use crate::bot_errors::{BotError};
-use crate::parser::{TextReply, VideoReply, ImageReply, tweet_id_from_link, tweet_id, ThreadReply}; 
+use crate::parser::{tweet_id_from_link, tweet_id, Reply, ParsedMedia, VideoEntity, ImageEntity}; 
 
 pub struct TextMessageProcessor {
     pub message: Message,
@@ -39,60 +42,15 @@ impl UpdateProcessor for TextMessageProcessor {
         }
     }
 
-    async fn send_video_reply(&self, bot: Bot, id: String, video_reply: VideoReply, included_in_thread: bool) -> Result<(), BotError> {
-        let video = InputFile::url(video_reply.url.clone());
-        let mut request = bot.send_video(self.message.chat.id, video)
-        .caption(escaped_text(&video_reply))
-        .parse_mode(ParseMode::MarkdownV2); 
-
-        if included_in_thread {
-            request = request.reply_markup(self.make_keyboard(&id));
+    async fn answer(&self, bot: Bot, id: String, reply: Reply, included_in_thread: bool) -> Result<(), BotError> {
+        match reply.media_entities.len() {
+            0 => self.send_text_reply(bot, id, &reply, included_in_thread).await,
+            1 => match reply.media_entities.first().unwrap() {
+                ParsedMedia::Image(image) => self.send_image_reply(bot, id, &reply, image, included_in_thread).await,
+                ParsedMedia::Video(video) => self.send_video_reply(bot, id, &reply, video, included_in_thread).await,
+            },
+            _ => self.send_media_group_reply(bot, id, &reply, included_in_thread).await
         }
-        
-        request.await?;
-
-        Ok(())
-    }
-    
-    async fn send_text_reply(&self, bot: Bot, id: String, text_reply: TextReply, included_in_thread: bool) -> Result<(), BotError> {
-        let mut request = bot.send_message(self.message.chat.id, escaped_text(&text_reply))
-        .parse_mode(ParseMode::MarkdownV2)
-        .disable_web_page_preview(true);
-
-        if included_in_thread {
-            request = request.reply_markup(self.make_keyboard(&id));
-        }
-
-        request.await?;
-        Ok(())
-    }
-
-    async fn send_image_reply(&self, bot: Bot, id: String, reply: ImageReply, included_in_thread: bool) -> Result<(), BotError> {
-        let images = reply.images.iter()
-        .map(|image| {
-            let image = InputMediaPhoto {
-                media: InputFile::url(image.url.clone()),
-                caption: None,
-                parse_mode: None,
-                caption_entities: None
-            };
-            InputMedia::Photo(image)
-        })
-        .collect::<Vec<_>>();
-        
-        let chat_id = self.message.chat.id;
-        bot.send_media_group(chat_id, images).await?;
-
-        let mut request = bot.send_message(self.message.chat.id, escaped_text(&reply))
-        .parse_mode(ParseMode::MarkdownV2)
-        .disable_web_page_preview(true);
-
-        if included_in_thread {
-            request = request.reply_markup(self.make_keyboard(&id));
-        }
-
-        request.await?;
-        Ok(())
     }
 
     async fn send_thread_reply(&self, bot: Bot, _id: String, thread_reply: ThreadReply, _included_in_thread: bool) -> Result<(), BotError> {
@@ -114,9 +72,95 @@ impl UpdateProcessor for TextMessageProcessor {
 
         Ok(())
     }
+
+    async fn track_hit_if_necessary(&self) -> Result<(), BotError> {
+        track_hit(String::from("message")).await
+    }
 }
 
 impl TextMessageProcessor {
+    async fn send_text_reply(&self, bot: Bot, id: String, reply: &Reply, included_in_thread: bool) -> Result<(), BotError> {
+        let mut request = bot.send_message(self.message.chat.id, escaped_text(reply))
+        .parse_mode(ParseMode::MarkdownV2)
+        .disable_web_page_preview(true);
+
+        if included_in_thread {
+            request = request.reply_markup(self.make_keyboard(&id));
+        }
+
+        request.await?;
+        Ok(())
+    }
+
+    async fn send_image_reply(&self, bot: Bot, id: String, reply: &Reply, image: &ImageEntity, included_in_thread: bool) -> Result<(), BotError> {
+        let video = InputFile::url(image.url.clone());
+        let mut request = bot.send_photo(self.message.chat.id, video)
+        .caption(escaped_text(reply))
+        .parse_mode(ParseMode::MarkdownV2); 
+
+        if included_in_thread {
+            request = request.reply_markup(self.make_keyboard(&id));
+        }
+        
+        request.await?;
+
+        Ok(())
+    }
+
+    async fn send_video_reply(&self, bot: Bot, id: String, reply: &Reply, video: &VideoEntity, included_in_thread: bool) -> Result<(), BotError> {
+        let video = InputFile::url(video.url.clone());
+        let mut request = bot.send_video(self.message.chat.id, video)
+        .caption(escaped_text(reply))
+        .parse_mode(ParseMode::MarkdownV2); 
+
+        if included_in_thread {
+            request = request.reply_markup(self.make_keyboard(&id));
+        }
+        
+        request.await?;
+
+        Ok(())
+    }
+
+    async fn send_media_group_reply(&self, bot: Bot, id: String, reply: &Reply, included_in_thread: bool) -> Result<(), BotError> {
+        let group = reply.media_entities.iter()
+        .map(|media_entity| {
+            match media_entity {
+                ParsedMedia::Image(image) => InputMedia::Photo(InputMediaPhoto {
+                    media: InputFile::url(image.url.clone()),
+                    caption: None,
+                    parse_mode: None,
+                    caption_entities: None
+                }),
+                ParsedMedia::Video(video) => InputMedia::Video(InputMediaVideo {
+                    media: InputFile::url(video.url.clone()),
+                    thumb: None,
+                    caption: None,
+                    parse_mode: None,
+                    caption_entities: None,
+                    width: Some(video.width.try_into().unwrap()),
+                    height: Some(video.height.try_into().unwrap()),
+                    duration: None,
+                    supports_streaming: None,
+                })
+            }            
+        }).collect::<Vec<_>>();
+        
+        let chat_id = self.message.chat.id;
+        bot.send_media_group(chat_id, group).await?;
+
+        let mut request = bot.send_message(self.message.chat.id, escaped_text(reply))
+        .parse_mode(ParseMode::MarkdownV2)
+        .disable_web_page_preview(true);
+
+        if included_in_thread {
+            request = request.reply_markup(self.make_keyboard(&id));
+        }
+
+        request.await?;
+        Ok(())
+    }
+
     fn tweet_id_from_deeplink(&self, text: &String) -> Result<u64, BotError> {
         tweet_id(text, r"/start (\d+)")
     }

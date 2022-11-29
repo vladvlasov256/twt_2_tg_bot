@@ -35,6 +35,8 @@ fn page_view(umami_id: String, page: String) -> PageView {
 }
 
 pub async fn track_hit(page: String) -> Result<(), BotError> {
+    log::info!("Tracking '{}'", page);
+
     let umami_url_result = env::var("UMAMI_URL");
     let umami_id_result = env::var("UMAMI_ID");
 

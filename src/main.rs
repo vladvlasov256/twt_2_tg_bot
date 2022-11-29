@@ -14,7 +14,6 @@ use bot::twitter_utils::twitter_api_token_value;
 use bot::update_processor::UpdateProcessor;
 use bot::text_message_processor::TextMessageProcessor;
 use bot::inline_query_processor::InlineQueryProcessor;
-use bot::analytics::track_hit;
 
 #[tokio::main]
 async fn main() {
@@ -64,7 +63,6 @@ fn dispatcher(bot: Bot) -> Dispatcher<Bot, RequestError, DefaultKey> {
 
 async fn process_message(bot: Bot, message: Message) -> Result<(), Box<dyn Error + Send + Sync>> {
     log::info!("Received a message");
-    track_hit(String::from("message")).await?;
     let token = twitter_token_data().await?;
     match message_text(&message) {
         Some(text) => {
@@ -89,7 +87,6 @@ fn message_text(message: &Message) -> Option<String> {
 
 async fn process_inline_query(bot: Bot, query: InlineQuery) -> Result<(), Box<dyn Error + Send + Sync>> {
     log::info!("Received an inline query");
-    track_hit(String::from("inline")).await?;
     let token = twitter_token_data().await?;
     let processor = InlineQueryProcessor { query: query };
     return Ok(processor.process(bot, &token).await?);
@@ -97,14 +94,22 @@ async fn process_inline_query(bot: Bot, query: InlineQuery) -> Result<(), Box<dy
 
 async fn process_callback_query(bot: Bot, query: CallbackQuery) -> Result<(), Box<dyn Error + Send + Sync>> {
     log::info!("Received a callback query");
-    track_hit(String::from("callback")).await?;
     let token = twitter_token_data().await?;
     let processor = CallbackQueryProcessor { query: query };
     return Ok(processor.process(bot, &token).await?);
 }
 
 async fn twitter_token_data() -> Result<Token, BotError> {
+    if let Ok(token_value) = env::var("TWITTER_BEARER_TOKEN") {
+        let token = Token::Bearer(token_value);
+        return Ok(token);
+    }
+
     let twitter_client_id = env::var("TWITTER_CLIENT_ID").expect("TWITTER_CLIENT_ID not set");
     let twitter_secret = env::var("TWITTER_SECRET").expect("TWITTER_SECRET not set");
-    return twitter_api_token_value(twitter_client_id, twitter_secret).await;
+    let token = twitter_api_token_value(twitter_client_id, twitter_secret).await?;
+    if let Token::Bearer(token_value) = &token {
+        env::set_var("TWITTER_BEARER_TOKEN", token_value);
+    }
+    Ok(token)
 }

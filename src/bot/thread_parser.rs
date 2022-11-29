@@ -10,7 +10,12 @@ use reqwest::Url;
 use serde::{Serialize, Deserialize};
 
 use crate::bot_errors::{BotError, BotErrorKind};
-use crate::parser::ThreadReply;
+use crate::parser::{ReplyData, tweet_text_to_displayable_string};
+pub struct ThreadReply {
+    pub user_name: Option<String>,
+    pub thumb_url: Option<Url>,
+    pub texts: Vec<String>
+}
 
 pub async fn is_included_in_thread(tweet: &Tweet, token: &Token) -> Result<bool, BotError> {
     if let Some(thread_user) = tweet.user.as_ref() {
@@ -51,16 +56,16 @@ pub async fn tweet_to_thread(start_tweet: &Tweet, token: &Token, first_chunk_len
                 let first_reply = show(first_reply_id.parse().unwrap(), &token).await?;
                 if let Some(head_id) = first_reply.in_reply_to_status_id {
                     let head = show(head_id, &token).await?;
-                    text = decode_html(&head.text).unwrap_or(String::from(""));
+                    text = tweet_text_to_displayable_string(&head.text);
                 }               
             } else {
                 // Start tweet is the head
-                text = decode_html(&start_tweet.text).unwrap_or(String::from(""));
+                text = tweet_text_to_displayable_string(&start_tweet.text);
             }
     
             let mut chunk_max_size = first_chunk_len;
             for reply in replies.iter().rev() {
-                let tweet_text = decode_html(reply.text.as_str()).unwrap_or(String::from(""));
+                let tweet_text = tweet_text_to_displayable_string(reply.text.as_str());
                 if text.len() + tweet_text.len() > chunk_max_size {
                     texts.push(text);
                     text = tweet_text;
@@ -121,4 +126,14 @@ async fn replies_in_conversation(conversation_id: String, user_screen_name: Stri
     let req = raw::request_get(url.as_str(), &token, Some(&params));
     let output: Response<ConversationResponse> = raw::response_json(req).await?;
     Ok(output.response.data)
+}
+
+impl ReplyData for ThreadReply {
+    fn user_name(&self) -> Option<String> {
+        return self.user_name.clone();
+    }
+
+    fn text(&self) -> String {
+        return self.texts.first().unwrap_or(&String::from("")).clone();
+    }
 }
