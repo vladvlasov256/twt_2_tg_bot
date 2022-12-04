@@ -101,7 +101,7 @@ pub fn trim_short_link(s: &String) -> Result<String, BotError> {
     Ok(s)
 }
 
-fn tweet_media(tweet: &Tweet) -> Vec<ParsedMedia> {
+pub fn tweet_media(tweet: &Tweet) -> Vec<ParsedMedia> {
     let media_entities: &Vec<MediaEntity>;
     if let Some(entities) = &tweet.extended_entities {
         media_entities = &entities.media;
@@ -113,7 +113,9 @@ fn tweet_media(tweet: &Tweet) -> Vec<ParsedMedia> {
         if let Ok(thumb_url) = Url::parse(entity.media_url_https.clone().as_str()) {
             let id = format!("{}", entity.id);
             if let Some(info) = &entity.video_info {
-                for variant in info.variants.iter().filter(|v| v.content_type == "video/mp4") {
+                let mut mp4_variants = info.variants.iter().filter(|v| v.content_type == "video/mp4").collect::<Vec<_>>();
+                mp4_variants.sort_by_key(|v| v.bitrate.unwrap_or(0));
+                if let Some(variant) = mp4_variants.last() {
                     if let Ok(url) = Url::parse(variant.url.as_str()) {
                         return Some(ParsedMedia::Video(VideoEntity {
                             id,

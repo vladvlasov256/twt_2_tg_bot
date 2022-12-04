@@ -7,9 +7,8 @@ use teloxide::types::{InputFile, InputMedia, InputMediaPhoto, ParseMode, InlineK
 use teloxide::utils::markdown::{bold, escape};
 
 use crate::analytics::track_hit;
-use crate::thread_parser::ThreadReply;
 use crate::update_processor::{UpdateProcessor, escaped_text};
-use crate::bot_errors::{BotError};
+use crate::bot_errors::BotError;
 use crate::parser::{tweet_id_from_link, tweet_id, Reply, ParsedMedia, VideoEntity, ImageEntity}; 
 
 pub struct TextMessageProcessor {
@@ -53,28 +52,12 @@ impl UpdateProcessor for TextMessageProcessor {
         }
     }
 
-    async fn send_thread_reply(&self, bot: Bot, _id: String, thread_reply: ThreadReply, _included_in_thread: bool) -> Result<(), BotError> {
-        if thread_reply.texts.len() > 0 {
-            bot.send_message(self.message.chat.id, escaped_text(&thread_reply))
-            .parse_mode(ParseMode::MarkdownV2)
-            .disable_web_page_preview(true)
-            .await?;
-        }
-
-        if thread_reply.texts.len() > 1 {
-            for text in &thread_reply.texts[1..] {
-                bot.send_message(self.message.chat.id, escape(&text))
-                .parse_mode(ParseMode::MarkdownV2)
-                .disable_web_page_preview(true)
-                .await?;
-            }
-        }
-
-        Ok(())
-    }
-
     async fn track_hit_if_necessary(&self) -> Result<(), BotError> {
         track_hit(String::from("message")).await
+    }
+
+    fn message_chat_id(&self) -> Option<ChatId> {
+        Some(self.message.chat.id)
     }
 }
 

@@ -38,7 +38,7 @@ impl InlineQueryProcessor {
         let result = InlineQueryResult::Article(self.result_article(id.clone(), reply));
 
         let pm_text = match included_in_thread {
-            true => Some(String::from("Unroll")),
+            true => Some(String::from("Unroll Thread")),
             false => None
         };
         let pm_parameter = match included_in_thread {

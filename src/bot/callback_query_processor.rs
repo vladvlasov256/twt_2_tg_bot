@@ -5,11 +5,10 @@ use async_trait::async_trait;
 use egg_mode::tweet;
 use teloxide::prelude::*;
 use teloxide::types::{ParseMode, InputMediaPhoto, InputFile, InputMedia, InputMediaVideo};
-use teloxide::utils::markdown::escape;
 
 use crate::analytics::track_hit;
 use crate::bot_errors::{BotError, BotErrorKind};
-use crate::thread_parser::{tweet_to_thread, ThreadReply};
+use crate::thread_parser::{tweet_to_thread, ThreadEntity};
 use crate::update_processor::{UpdateProcessor, escaped_text};
 use crate::parser::{tweet_to_reply, Reply, ParsedMedia};
 
@@ -32,8 +31,8 @@ impl UpdateProcessor for CallbackQueryProcessor {
             let tweet_id = data.strip_prefix("unroll_").unwrap();
             let id = tweet_id.parse().unwrap();
             let tweet = tweet::show(id, &token).await?.response;
-            let reply = tweet_to_thread(&tweet, &token, self.first_chunk_len(), 3072).await?;
-            return self.send_thread_reply(bot, String::from(tweet_id), reply, false).await;
+            let reply = tweet_to_thread(&tweet, &token).await?;
+            return self.send_thread_reply(&bot, String::from(tweet_id), reply, false).await;
         } else {
             track_hit(String::from("callback")).await?;
             let id = data.parse().unwrap();
@@ -80,42 +79,35 @@ impl UpdateProcessor for CallbackQueryProcessor {
 
         Ok(())
     }
-    
-    async fn send_thread_reply(&self, bot: Bot, _id: String, thread_reply: ThreadReply, _included_in_thread: bool) -> Result<(), BotError> {
-        if let Some(message) = self.query.message.clone() {
+
+    async fn edit_message_with_thread_entity(&self, bot: &Bot, _entity: &ThreadEntity, escaped_text: &String) -> Result<(), BotError> {
+        if let Some(message) = &self.query.message {
             if let Some(_text) = message.text() {
-                if thread_reply.texts.len() > 0 {
-                    bot
-                    .edit_message_text(message.chat.id, message.id, escaped_text(&thread_reply))
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .disable_web_page_preview(true)
-                    .await?;
-                }
+                bot
+                .edit_message_text(message.chat.id, message.id, escaped_text)
+                .parse_mode(ParseMode::MarkdownV2)
+                .disable_web_page_preview(true)
+                .await?;
             } else if let Some(_capiton) = message.caption() {
-                if thread_reply.texts.len() > 0 {
-                    bot
-                    .edit_message_caption(message.chat.id, message.id)
-                    .caption(escaped_text(&thread_reply))
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .await?;
-                }
+                bot
+                .edit_message_caption(message.chat.id, message.id)
+                .caption(escaped_text)
+                .parse_mode(ParseMode::MarkdownV2)
+                .await?;
             }
-
-            if thread_reply.texts.len() > 1 {
-                for text in &thread_reply.texts[1..] {
-                    bot.send_message(message.chat.id, escape(&text))
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .disable_web_page_preview(true)
-                    .await?;
-                }
-            }            
         }
-
         Ok(())
     }
 
     async fn track_hit_if_necessary(&self) -> Result<(), BotError> {
         Ok(())
+    }
+
+    fn message_chat_id(&self) -> Option<ChatId> {
+        if let Some(message) = &self.query.message {
+            return Some(message.chat.id)
+        }
+        None
     }
 }
 
@@ -125,8 +117,8 @@ impl CallbackQueryProcessor {
             return Ok(ChatId(value))
         }
 
-        if let Some(message) = self.query.message.clone() {
-            return Ok(message.chat.id)
+        if let Some(chat_id) = self.message_chat_id() {
+            return Ok(chat_id)
         }
 
         Err(BotError::from(BotErrorKind::CallbackDataParsingError))
@@ -137,16 +129,5 @@ impl CallbackQueryProcessor {
             Some(data) => Ok(data.clone()),
             _ => Err(BotError::from(BotErrorKind::CallbackDataParsingError))
         }
-    }
-
-    fn first_chunk_len(&self) -> usize {
-        if let Some(message) = self.query.message.clone() {
-            if let Some(_text) = message.text() {
-                return 3072
-            } else {
-                return 768
-            }
-        }
-        return 0
     }
 }
