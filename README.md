@@ -14,7 +14,7 @@ The bot allows to unroll threads.
 
 ![Tweet with thread link converted with bot](screenshots/thread.gif)
 
-> Only text replies are supported for now
+> Threads older than 1 week aren't supported because of Twitter API limitations
 
 ## Text converter
 
